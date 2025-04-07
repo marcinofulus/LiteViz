@@ -31,6 +31,8 @@ colors1 = {
     'plaque_non_calcified': (128, 128, 128, 255) # Gray for Non-Calcified Plaque
 }
 
+wl2range = lambda w,l: (l-w/2,l+w/2)
+
 def HU_to_gray(image, hu=(-140, 900)):
     """Convert image array to grayscale using HU windowing."""
     re_imgs = np.clip(255 * (image - hu[0]) / (hu[1] - hu[0]), 0, 255).astype(np.uint8)
@@ -77,33 +79,56 @@ class DicomWidget:
         # Set up the initial display
         self._update_image(0, (-140, 900))
         
+        self.z_index=IntSlider(min=0, max=self.img.shape[0] - 1, value=0, description='Slice')
+        self.hu=FloatRangeSlider(min=-1000, max=2000, step=1, value=(-130, 600), description='HU Range')
+        self.mask_opacity=FloatSlider(min=0.0, max=1.0, step=0.01, value=0.5, description='Mask Opacity')
+        self.mask_on=ToggleButton(value=False, description='Mask On/Off')
+        self.only_mask=ToggleButton(value=False, description='Imag On/Off')
 
+        
         self.controls = interactive(
             self._update,
-            z_index=IntSlider(min=0, max=self.img.shape[0] - 1, value=0, description='Slice'),
-            hu=FloatRangeSlider(min=-1000, max=2000, step=1, value=(-130, 600), description='HU Range'),
-            mask_opacity=FloatSlider(min=0.0, max=1.0, step=0.01, value=0.5, description='Mask Opacity'),
-            mask_on=ToggleButton(value=False, description='Mask On/Off')
+            z_index=self.z_index,
+            hu=self.hu,
+            mask_opacity=self.mask_opacity,
+            mask_on=self.mask_on,
+            only_mask=self.only_mask
         )
         
         # Layout the widget and controls horizontally
         self.widget = HBox([self.im_w, self.controls])
+
+
+        self.LungWindow = wl2range(1500,-600) # Lung Window
+        self.MediastinumWindow = wl2range(400,40) # mediastinum Window
+        self.BoneWindow = wl2range(1800,400) # Bone Window
     
-    def _update_image(self, z_index, hu, mask_opacity=0.5, mask_on=False):
+    def _update_image(self, z_index, hu, mask_opacity=0.5, mask_on=False, only_mask=False):
         """Update the displayed image based on z-index and HU range."""
         # Convert the selected slice to grayscale
-        im_array = HU_to_gray(self.img[z_index], hu=hu)
-        
-        if self.mask is not None and mask_on:
-            im_pil = PILImage.fromarray(im_array).convert('RGBA')
-        else:
-            im_pil = PILImage.fromarray(im_array)
+
+        if  mask_on is False  and  only_mask:
+            im_pil =  PILImage.new('RGBA', (self.img.shape[2], self.img.shape[1]), (0, 0, 0, 255))
+            self.im_pil = im_pil
+            buf = io.BytesIO()
+            im_pil.save(buf, format='webp', quality=90)
+            self.im_w.value = buf.getvalue()
+            return None 
+
+       
+        if not only_mask:
+            im_array = HU_to_gray(self.img[z_index], hu=hu)
+            
+            if self.mask is not None and mask_on:
+                im_pil = PILImage.fromarray(im_array).convert('RGBA')
+            else:
+                im_pil = PILImage.fromarray(im_array)
 
     
         # Apply mask overlay if mask exists and is enabled
         if self.mask is not None and mask_on:
             mask_slice = self.mask[z_index]
-            overlay = np.zeros((im_array.shape[0], im_array.shape[1], 4), dtype=np.uint8)
+            overlay = np.zeros((mask_slice.shape[0], mask_slice.shape[1], 4), dtype=np.uint8)
             
             # Iterate through labels in the mask
             for label, organ in self.label_to_organ.items():
@@ -115,31 +140,36 @@ class DicomWidget:
             # Convert overlay to PIL image
             overlay_pil = PILImage.fromarray(overlay, 'RGBA')
 
-            # Scale overlay alpha by mask_opacity
-            overlay_array = np.array(overlay_pil, dtype=np.float32)
-            overlay_array[..., 3] *= mask_opacity  # Adjust alpha channel (0-255)
-            overlay_pil = PILImage.fromarray(overlay_array.astype(np.uint8), 'RGBA')
-            
-                    
-            with self.output:
-                print(f'in mask {overlay.sum()}')
-            # im_pil = PILImage.blend(im_pil, overlay_pil, alpha=mask_opacity)
-            im_pil = PILImage.alpha_composite(im_pil, overlay_pil)
+            if only_mask:
+                im_pil = overlay_pil
+            else:
+                # Scale overlay alpha by mask_opacity
+                overlay_array = np.array(overlay_pil, dtype=np.float32)
+                overlay_array[..., 3] *= mask_opacity  # Adjust alpha channel (0-255)
+                overlay_pil = PILImage.fromarray(overlay_array.astype(np.uint8), 'RGBA')
+                
+                        
+                with self.output:
+                    print(f'in mask {overlay.sum()}')
+                # im_pil = PILImage.blend(im_pil, overlay_pil, alpha=mask_opacity)
+                
+                im_pil = PILImage.alpha_composite(im_pil, overlay_pil)
 
 
         else:
             with self.output:
                 print(f'NO in mask')
 
-        
+        self.im_pil = im_pil
+
         # Save to WebP bytes
         buf = io.BytesIO()
         im_pil.save(buf, format='webp', quality=90)
         self.im_w.value = buf.getvalue()
     
-    def _update(self, z_index, hu, mask_opacity, mask_on):
+    def _update(self, z_index, hu, mask_opacity, mask_on, only_mask):
         """Callback function for interactive updates."""
-        self._update_image(z_index, hu, mask_opacity, mask_on)
+        self._update_image(z_index, hu, mask_opacity, mask_on, only_mask)
     
     def display(self):
         """Display the widget in a Jupyter notebook."""
@@ -192,11 +222,19 @@ class DicomWidget:
             f.write(self.im_w.value)
 
     
-    def save_animation(self, fn='animation.webp', z_range=None):
+    def save_animation(self, fn='animation.webp', z_lst=None):
         """Save an animation of slices as a WebP file."""
-        raise NotImplementedError
-        if z_range is None:
-            z_range = (0, self.img.shape[0])
-        frames = [PILImage.fromarray(HU_to_gray(self.img[z], hu=(-140, 900))) 
-                  for z in range(z_range[0], z_range[1])]
+        
+        #    fn = '.'.join(fn.split('.')[:-1])  
+        #    fn = f'{fn}_{self.controls.kwargs["z_index"]:04}.webp'
+
+        if z_lst is None:
+            z_lst = range(self.img.shape[0])
+
+        frames = []
+        for z in z_lst:
+            self.z_index.value = z
+            frames.append(self.im_pil)
+        
+       
         save_PILlst_webp(frames, fn=fn)
