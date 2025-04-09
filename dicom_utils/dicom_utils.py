@@ -4,7 +4,7 @@ from PIL import Image as PILImage
 import io
 import numpy as np
 
-def save_PILlst_webp(frames, fn='animation.webp'):
+def save_PILlst_webp(frames, fn='animation.webp',format='webp'):
     """Save a list of PIL images as a WebP animation."""
     frames[0].save(
         fn,
@@ -12,7 +12,7 @@ def save_PILlst_webp(frames, fn='animation.webp'):
         append_images=frames[1:],
         duration=100,  # Duration in milliseconds per frame
         loop=0,
-        format='webp',
+        format=format,
         quality=95
     )
 
@@ -28,7 +28,7 @@ colors1 = {
     'LCA': (0, 128, 128, 255),        # Teal for Left Coronary Artery (LCA)
     'RCA': (128, 0, 0, 255),          # Maroon for Right Coronary Artery (RCA)
     'plaque_calcified': (192, 192, 192, 255), # Silver for Calcified Plaque
-    'plaque_non_calcified': (128, 128, 128, 255) # Gray for Non-Calcified Plaque
+    'plaque_non_calcified': (128, 128, 128, 255) # Gray for Non-Calcified Plaquq
 }
 
 wl2range = lambda w,l: (l-w/2,l+w/2)
@@ -54,7 +54,7 @@ class DicomWidget:
         self.origin = origin if origin is not None else (0, 0, 0)
         self.spacing = spacing if spacing is not None else (1, 1, 1)
         self.mask = None
-
+        self.format = 'webp'
         self.output = Output()
 
         if mask is not None:
@@ -111,7 +111,7 @@ class DicomWidget:
             im_pil =  PILImage.new('RGBA', (self.img.shape[2], self.img.shape[1]), (0, 0, 0, 255))
             self.im_pil = im_pil
             buf = io.BytesIO()
-            im_pil.save(buf, format='webp', quality=90)
+            im_pil.save(buf, format=self.format, quality=90)
             self.im_w.value = buf.getvalue()
             return None 
 
@@ -164,7 +164,7 @@ class DicomWidget:
 
         # Save to WebP bytes
         buf = io.BytesIO()
-        im_pil.save(buf, format='webp', quality=90)
+        im_pil.save(buf, format=self.format, quality=90)
         self.im_w.value = buf.getvalue()
     
     def _update(self, z_index, hu, mask_opacity, mask_on, only_mask):
@@ -212,11 +212,12 @@ class DicomWidget:
         self.controls.update()
 
     def save_frame(self,output_fn=None):
+        format = self.format
         if  output_fn:
-            if not output_fn.endswith('.webp'):
-                output_fn = f'{output_fn}_{self.controls.kwargs["z_index"]:04}.webp'
+            if not output_fn.endswith('.'+format):
+                output_fn = f'{output_fn}_{self.controls.kwargs["z_index"]:04}.{format}'
         else:
-            output_fn = f'img_{self.controls.kwargs["z_index"]:04}.webp'
+            output_fn = f'img_{self.controls.kwargs["z_index"]:04}.{format}'
         
         with open(output_fn, 'wb') as f:
             f.write(self.im_w.value)
@@ -237,4 +238,4 @@ class DicomWidget:
             frames.append(self.im_pil)
         
        
-        save_PILlst_webp(frames, fn=fn)
+        save_PILlst_webp(frames, fn=fn,format='webp')
