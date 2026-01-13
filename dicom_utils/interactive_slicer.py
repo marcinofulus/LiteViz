@@ -4,12 +4,14 @@ from PIL import Image, ImageDraw
 import io
 import threading
 import time
+output = widgets.Output()
 
 class InteractiveImageSlicer:
     """
     An interactive viewer that drives a DicomSlicer backend directly.
     Decoupled from the DicomWidget UI controls.
     """
+    version = 'dev3'
     def __init__(self, dicom_slicer, debug_overlay=False, fps=10, show_status=True):
         
         self.format = 'webp'
@@ -134,6 +136,9 @@ class InteractiveImageSlicer:
     def handle_event(self, event):
         etype = event['type']
         
+        if etype == 'contextmenu':
+            return
+        
         # if 'relativeX' in event:
         #     self.mouse_x = event['relativeX']
         #     self.mouse_y = event['relativeY']
@@ -194,28 +199,37 @@ class InteractiveImageSlicer:
         
         self.update_status(f"Drag Start: {self.drag_start_pos} | Button: {self.drag_button}")
         self.refresh_display()
-
+    output.capture()
     def _on_drag_move(self, event):
+
         if self.is_dragging:
             self.update_status(f"Dragging: {self.drag_start_pos} -> ({self.mouse_x}, {self.mouse_y})")
+
+            if self.drag_button == 2:
+    
+                s = self.wl_sens    
+                dx = (self.mouse_x-self.drag_start_pos[0])
+                dy = (self.mouse_y-self.drag_start_pos[1])
+                a,b = self.hu0
+                a,b = int(a+s*dx -s*dy), int(b+s*dx + s*dy)
+                
+                self.slicer.state['hu'] = a, b
+        
+                self.refresh_display(get_base=True)
+
+            else:
+                self.refresh_display(get_base=False)
+
+            
         else:
             try:
                 HU = self.slicer.img[self.slicer.state['z_index'],self.mouse_y, self.mouse_x]
             except:
                 HU='ops'
             self.update_status(f"Hover: ({self.mouse_x}, {self.mouse_y}) HU: {HU}")
-        if self.is_dragging and self.drag_button == 2:
-            s = self.wl_sens    
-            dx = (app.mouse_x-app.drag_start_pos[0])
-            dy = (app.mouse_y-app.drag_start_pos[1])
-            a,b = self.hu0
-            a,b = int(a+s*dx -s*dy), int(b+s*dx + s*dy)
             
-            self.slicer.state['hu'] = a, b
-    
-            self.refresh_display(get_base=True)
-        else:
-            self.refresh_display(get_base=False)
+       
+        
 
     def _on_drag_end(self, event):
         if self.is_dragging:
@@ -225,6 +239,7 @@ class InteractiveImageSlicer:
         self.refresh_display()
 
     def _on_keydown(self, event):
+        print(event)
         key = event['key']
         
         current_z = self.slicer.state['z_index']
@@ -247,4 +262,5 @@ class InteractiveImageSlicer:
             self.update_status(f"Key: {key} | Slice: {new_z}")
             self.refresh_display(get_base=True)
         else:
-            self.update_status(f"Key Pressed: {key}")
+            self.update_status(f"Key Pressed : {key}")
+
