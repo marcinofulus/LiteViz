@@ -6,6 +6,33 @@ from contextlib import contextmanager
 import ipywidgets as widgets
 from ipywidgets import Image, Output, IntSlider, IntRangeSlider, ToggleButton, VBox, HBox
 
+default_label_to_organ = {i: f'mask{i}' for i in range(1, 17)}
+
+# 2. Define a discrete 16-color palette (RGBA)
+# 1:Red, then high-contrast standard colors
+palette_16 = [
+    (255, 0, 0, 255),       # 1. Red
+    (0, 255, 0, 255),       # 2. Green
+    (0, 0, 255, 255),       # 3. Blue
+    (255, 255, 0, 255),     # 4. Yellow
+    (0, 255, 255, 255),     # 5. Cyan
+    (255, 0, 255, 255),     # 6. Magenta
+    (255, 165, 0, 255),     # 7. Orange
+    (128, 0, 128, 255),     # 8. Purple
+    (255, 192, 203, 255),   # 9. Pink
+    (128, 128, 0, 255),     # 10. Olive
+    (0, 128, 128, 255),     # 11. Teal
+    (0, 0, 128, 255),       # 12. Navy
+    (128, 0, 0, 255),       # 13. Maroon
+    (0, 255, 127, 255),     # 14. Spring Green
+    (128, 128, 128, 255),   # 15. Gray
+    (210, 105, 30, 255)     # 16. Chocolate
+]
+
+# 3. Map Organ Names to Colors
+default_organ_to_color = {
+    f'mask{i}': palette_16[i-1] for i in range(1, 17)
+}
 
 def wl2range(w, l):
     """Convert Window/Level to Min/Max."""
@@ -55,8 +82,8 @@ class DicomSlicer:
             'only_mask': False
         }
 
-        self.label_to_organ = label_to_organ if label_to_organ else {1: 'mask'}
-        self.organ_to_color = organ_to_color if organ_to_color else {'mask': (255, 0, 0, 128)}
+        self.label_to_organ = label_to_organ if label_to_organ else default_label_to_organ
+        self.organ_to_color = organ_to_color if organ_to_color else default_organ_to_color 
 
     def update_state(self, **kwargs):
         """Update internal state dictionary."""
