@@ -11,7 +11,7 @@ class InteractiveImageSlicer:
     An interactive viewer that drives a DicomSlicer backend directly.
     Decoupled from the DicomWidget UI controls.
     """
-    version = 'dev3'
+    version = 'dev4'
     def __init__(self, dicom_slicer, debug_overlay=False, fps=10, show_status=True):
         
         self.format = 'webp'
@@ -23,6 +23,10 @@ class InteractiveImageSlicer:
         self.radius = 30
         self.wl_sens   = 1
         self.hu0 = self.slicer.state['hu']
+
+        self.P1 = 'z_index'
+        self.P1_min = 'z_index_min'
+        self.P1_max = 'z_index_max'
         
         # Load Initial Image from Slicer
         self.base_image = self.slicer.get_image().convert("RGB")
@@ -86,8 +90,8 @@ class InteractiveImageSlicer:
     # --- Drawing / Display Logic ---
 
     def _clear_cross_after_delay(self):
-        """Waits 0.4s then clears the cross and refreshes the view."""
-        time.sleep(0.4)
+        """Waits then clears the cross and refreshes the view."""
+        time.sleep(1.4)
         self.cross_pos = None
         self.refresh_display()
 
@@ -167,16 +171,17 @@ class InteractiveImageSlicer:
         delta = event['deltaY']
         
         # 1. Get Limits
-        max_z = self.slicer.img.shape[0] - 1
-        current_z = self.slicer.state['z_index']
+        min_z = self.slicer.state[self.P1_min]
+        max_z = self.slicer.state[self.P1_max]
+        current_z = self.slicer.state[self.P1]
         
         # 2. Calculate New Z
         step = 1 if delta > 0 else -1
-        new_z = max(0, min(max_z, current_z + step))
+        new_z = max(min_z, min(max_z, current_z + step))
         
         if new_z != current_z:
             # 3. Update Slicer
-            self.slicer.update_state(z_index=new_z)
+            self.slicer.update_state(**{self.P1: new_z})
             
             # 4. Update Status
             self.update_status(f"Slice: {new_z}/{max_z}")
@@ -223,11 +228,12 @@ class InteractiveImageSlicer:
             
         else:
             try:
-                HU = self.slicer.img[self.slicer.state['z_index'],self.mouse_y, self.mouse_x]
+                HU = self.slicer.get_value_at_jk(self.mouse_y, self.mouse_x)
             except:
                 HU='ops'
             self.update_status(f"Hover: ({self.mouse_x}, {self.mouse_y}) HU: {HU}")
-            
+            self.refresh_display(get_base=False)
+
        
         
 
@@ -242,8 +248,8 @@ class InteractiveImageSlicer:
         print(event)
         key = event['key']
         
-        current_z = self.slicer.state['z_index']
-        max_z = self.slicer.img.shape[0] - 1
+        current_z = self.slicer.state[self.P1]
+        max_z = self.slicer.state[self.P1_max]
         new_z = current_z
 
         if key == 'ArrowUp':
@@ -257,7 +263,7 @@ class InteractiveImageSlicer:
             pass
             
         if new_z != current_z:
-            self.slicer.update_state(z_index=new_z)
+            self.slicer.update_state(**{self.P1: new_z})
             self.base_image = self.slicer.get_image().convert("RGB")
             self.update_status(f"Key: {key} | Slice: {new_z}")
             self.refresh_display(get_base=True)

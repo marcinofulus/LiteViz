@@ -76,6 +76,8 @@ class DicomSlicer:
         # State Dictionary
         self.state = {
             'z_index': 0,
+            'z_index_min':0,
+            'z_index_max':self.img.shape[0]-1,
             'hu': (-130, 600),
             'mask_opacity': 50,  # 0-100
             'mask_on': False,
@@ -93,13 +95,19 @@ class DicomSlicer:
         """Update the underlying data."""
         self.img = image
         self.mask = mask
+        self.state['z_index_max'] = self.img.shape[0]-1
         # Ensure z_index is within new bounds
-        if self.state['z_index'] >= self.img.shape[0]:
+        if self.state['z_index'] >= self.state['z_index_max']:
             self.state['z_index'] = 0
 
     def set_mask_mappings(self, label_to_organ, organ_to_color):
         self.label_to_organ = label_to_organ
         self.organ_to_color = organ_to_color
+    
+    def get_value_at_jk(self, j,k):
+        i = self.state['z_index']
+        HU = self.img[i,j,k]
+        return HU
 
     def get_image(self):
         """Generate and return the PIL Image based on current state."""
