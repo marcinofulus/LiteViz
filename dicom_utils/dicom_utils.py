@@ -182,154 +182,89 @@ class DicomSlicer:
         self.update_state(z_index=original_z)
 
 class DicomWidget:
-    """A widget for interactively displaying DICOM slices with HU windowing."""
+    """A widget for interactively displaying DICOM slices with HU windowing.
+    This base widget relies on simple ipywidgets and has NO dependencies on ipyevents."""
 
     def __init__(self, image_array, mask=None, origin=None, spacing=None, label_to_organ=None, organ_to_color=None):
         
         # Initialize the Logic Engine
-        self.slicer = DicomSlicer(image_array, mask=mask, origin=origin, spacing=spacing, \
+        self.slicer = DicomSlicer(image_array, mask=mask, origin=origin, spacing=spacing,
                                   label_to_organ=label_to_organ, organ_to_color=organ_to_color)
         
-        # Meta properties
-        self.format = 'webp'
-        self.output = Output()
-
-        # Flags
-        self._programmatic_update = False
-        self.update_image_widget = True 
+        # UI Components
+        from .viewers import SimpleImageViewer
+        from .controls import DicomControls
         
-        # Visual Component
-        self.im_w = Image()
-        # Keep a reference to current PIL for saving frames
-        self.im_pil = None
-
-        # --- Define Widgets (All Int based) ---
-        self.z_index = IntSlider(
-            min=0, max=image_array.shape[0] - 1, value=0, description='Slice'
-        )
+        initial_img = self.slicer.get_image()
+        self.viewer = SimpleImageViewer(width=initial_img.width, height=initial_img.height)
+        self.controls = DicomControls(max_z=image_array.shape[0]-1, on_change=self._on_controls_change)
         
-        self.hu = IntRangeSlider(
-            min=-1000, max=3000, step=1, value=(-130, 600), description='HU Range'
-        )
+        self.widget = widgets.HBox([self.viewer.widget, self.controls.widget])
         
-        self.mask_opacity = IntSlider(
-            min=0, max=100, step=1, value=50, description='Opacity %'
-        )
-        
-        self.mask_on = ToggleButton(value=False, description='Mask On/Off')
-        self.only_mask = ToggleButton(value=False, description='Img On/Off')
-
-        # --- Bind Observers ---
-        for w in [self.z_index, self.hu, self.mask_opacity, self.mask_on, self.only_mask]:
-            w.observe(self._on_change, names='value')
-
-        self.controls = VBox([
-            self.z_index, self.hu, self.mask_opacity, self.mask_on, self.only_mask
-        ])
-        self.widget = HBox([self.im_w, self.controls])
-
         # Preset Windows
         self.LungWindow = wl2range(1500, -600)
         self.MediastinumWindow = wl2range(400, 40)
         self.BoneWindow = wl2range(1800, 400)
         
-        # Initial Render
-        self._on_change(None)
+        # Sync Initial State
+        self._on_controls_change({
+            'z_index': self.controls.z_index.value,
+            'hu': self.controls.hu.value,
+            'mask_opacity': self.controls.mask_opacity.value,
+            'mask_on': self.controls.mask_on.value,
+            'only_mask': self.controls.only_mask.value
+        })
+
+    # --- Backwards Compatibility Properties ---
+    @property
+    def z_index(self): return self.controls.z_index
+    @property
+    def hu(self): return self.controls.hu
+    @property
+    def mask_opacity(self): return self.controls.mask_opacity
+    @property
+    def mask_on(self): return self.controls.mask_on
+    @property
+    def only_mask(self): return self.controls.only_mask
+    @property
+    def im_w(self): return self.viewer.image_widget
+
+    # --- State Handling ---
+    def _on_controls_change(self, state_dict):
+        """Called when UI controls are changed."""
+        self.slicer.update_state(**state_dict)
+        self.viewer.set_image(self.slicer.get_image())
 
     @contextmanager
     def ignore_updates(self):
         """Context manager to silence observers during programmatic updates."""
-        self._programmatic_update = True
+        self.controls._programmatic_update = True
         try:
             yield
         finally:
-            self._programmatic_update = False
+            self.controls._programmatic_update = False
 
-    def set_widget_value(self, widget, new_val):
-        """
-        Generic backend function to safely update any widget programmatically.
-        """
-        if not hasattr(widget, 'value'):
-            return
-
-        w_min = getattr(widget, 'min', None)
-        w_max = getattr(widget, 'max', None)
-        step = getattr(widget, 'step', 1)
-
-        def fit(val):
-            if w_min is not None: val = max(w_min, val)
-            if w_max is not None: val = min(w_max, val)
-            if step > 1 and w_min is not None:
-                val = round((val - w_min) / step) * step + w_min
-            return int(val)
-
-        if isinstance(widget, IntRangeSlider):
-            try:
-                v1, v2 = new_val
-                final_val = (min(fit(v1), fit(v2)), max(fit(v1), fit(v2)))
-            except (ValueError, TypeError):
+    def set_widget_value(self, widget_obj, new_val):
+        """Generic backend function to safely update any widget programmatically."""
+        # Find which key this widget represents and update it via update_silently
+        for k in ['z_index', 'hu', 'mask_opacity', 'mask_on', 'only_mask']:
+            if getattr(self.controls, k) is widget_obj:
+                self.controls.update_silently(**{k: new_val})
                 return
-        elif isinstance(widget, IntSlider):
-            try:
-                final_val = fit(new_val)
-            except (ValueError, TypeError):
-                return
-        elif isinstance(widget, ToggleButton):
-            final_val = bool(new_val)
-        else:
-            final_val = new_val
-
-        if widget.value != final_val:
-            with self.ignore_updates():
-                widget.value = final_val
-
-    def _on_change(self, change):
-        """Central event handler."""
-        if self._programmatic_update:
-            return
-
-        # 1. Update Slicer State
-        self.slicer.update_state(
-            z_index=self.z_index.value,
-            hu=self.hu.value,
-            mask_opacity=self.mask_opacity.value,
-            mask_on=self.mask_on.value,
-            only_mask=self.only_mask.value
-        )
-        
-        # 2. Get Image from Slicer
-        self.im_pil = self.slicer.get_image()
-        
-        # 3. Update Widget View
-        if self.update_image_widget:
-            buf = io.BytesIO()
-            self.im_pil.save(buf, format=self.format, quality=90)
-            self.im_w.value = buf.getvalue()
-
-    # --- Wrapper methods for external control ---
 
     def _update_image(self, z_index, hu, mask_opacity, mask_on, only_mask):
-        """
-        Compatibility method for external interaction classes (like InteractiveImageEditor).
-        Instead of duplicating logic, this just pushes values to slicer and updates view.
-        """
+        """Compatibility method for external interaction classes."""
         self.slicer.update_state(
             z_index=z_index, hu=hu, mask_opacity=mask_opacity,
             mask_on=mask_on, only_mask=only_mask
         )
-        self.im_pil = self.slicer.get_image()
-        
-        if self.update_image_widget:
-            buf = io.BytesIO()
-            self.im_pil.save(buf, format=self.format, quality=90)
-            self.im_w.value = buf.getvalue()
+        self.viewer.set_image(self.slicer.get_image())
 
     def set_slice(self, z):
-        self.set_widget_value(self.z_index, z)
-        # Assuming UI sync only; explicit update might be needed if not coupled with mouse
+        self.controls.update_silently(z_index=z)
 
     def set_hu(self, min_val, max_val):
-        self.set_widget_value(self.hu, (min_val, max_val))
+        self.controls.update_silently(hu=(min_val, max_val))
 
     def display(self):
         from IPython.display import display
@@ -338,36 +273,32 @@ class DicomWidget:
     def add_mask(self, mask_array, label_to_organ, organ_to_color):
         if mask_array.shape != self.slicer.img.shape:
             raise ValueError("Mask array shape must match image array shape.")
-        
         self.slicer.set_data(self.slicer.img, mask_array)
         self.slicer.set_mask_mappings(label_to_organ, organ_to_color)
-        self._on_change(None)
+        self.viewer.set_image(self.slicer.get_image())
 
     def update_case(self, image, mask=None):
-        # Update Slicer Data
         self.slicer.set_data(image, mask)
-        
-        # Update Widget Bounds
-        if self.z_index.value > image.shape[0]-1:
-             self.set_widget_value(self.z_index, 0)
-        self.z_index.max = image.shape[0] - 1
-        
-        # Refresh
-        self._on_change(None)
+        max_z = image.shape[0] - 1
+        self.controls.z_index.max = max_z
+        if self.controls.z_index.value > max_z:
+             self.controls.update_silently(z_index=0)
+             self.slicer.update_state(z_index=0)
+        self.viewer.set_image(self.slicer.get_image())
 
     def save_frame(self, output_fn=None):
-        format = self.format
-        current_z = self.z_index.value
+        format = self.viewer.format
+        current_z = self.controls.z_index.value
         if output_fn:
             if not output_fn.endswith('.' + format):
                 output_fn = f'{output_fn}_{current_z:04}.{format}'
         else:
             output_fn = f'img_{current_z:04}.{format}'
         
-        # Use current PIL
-        if self.im_pil:
+        im_pil = self.slicer.get_image()
+        if im_pil:
             with open(output_fn, 'wb') as f:
-                self.im_pil.save(f, format=format)
+                im_pil.save(f, format=format)
 
 
       
