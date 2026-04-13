@@ -270,6 +270,10 @@ class UICanvas:
         self.is_dragging = False
         self.start_x = 0
         self.start_y = 0
+        self.last_x = 0
+        self.last_y = 0
+        self.last_x_global = 0
+        self.last_y_global = 0
         self.down_timestamp = 0
         self.last_mouse_up_timestamp = 0
         self.drag_button = None
@@ -300,7 +304,17 @@ class UICanvas:
         # Coordinate Mapping
         x_global = int(event.get('dataX', 0))
         y_global = int(event.get('dataY', 0))
-        sub_win, x, y = self.meta.find_subwindow(x_global, y_global)
+        
+        # If event doesn't have coordinates (some key events), use last known
+        if 'dataX' not in event and 'dataY' not in event:
+            sub_win, x, y = self.meta.find_subwindow(self.last_x_global, self.last_y_global)
+        else:
+            sub_win, x, y = self.meta.find_subwindow(x_global, y_global)
+            self.last_x_global = x_global
+            self.last_y_global = y_global
+            self.last_x = x
+            self.last_y = y
+
         new_subwindow_name = sub_win.name if sub_win else None
         
         # Subwindow Enter/Leave
@@ -367,7 +381,7 @@ class UICanvas:
 
         elif etype == 'wheel':
             scroll_delta = np.sign(event.get('deltaY', 0))
-            self.send_event('mouse_wheel', {'deltaY': scroll_delta}, self.current_subwindow_name, event)
+            self.send_event('mouse_wheel', {'deltaY': scroll_delta, 'x': x, 'y': y}, self.current_subwindow_name, event)
 
         elif etype == 'keydown':
             code = event.get('code')
@@ -392,6 +406,7 @@ class UICanvas:
         if raw_event.get('shiftKey'): modifier_mask |= 1
         if raw_event.get('ctrlKey'): modifier_mask |= 2
         if raw_event.get('altKey'): modifier_mask |= 4
+        if raw_event.get('metaKey'): modifier_mask |= 8
         
         message = {
             'action': 'UIevents',
@@ -399,8 +414,8 @@ class UICanvas:
             'planeId': plane_id or 'none',
             'modifierMask': modifier_mask,
             'timestamp': int(now * 1000),
-            'x': payload.get('x'),
-            'y': payload.get('y'),
+            'x': payload.get('x', self.last_x),
+            'y': payload.get('y', self.last_y),
             'dx': payload.get('dx'),
             'dy': payload.get('dy'),
             'mouseButton': payload.get('mouseButton'),
