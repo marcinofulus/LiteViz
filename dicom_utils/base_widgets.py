@@ -13,7 +13,7 @@ class SimpleRGBWidget:
         self.mask = mask if mask is not None else np.zeros(rgb_array.shape[:2], dtype=np.uint8)
         
         # 1. Image Widget (The DOM Event Source)
-        self.im_w = widgets.Image(format='png', width=rgb_array.shape[1], height=rgb_array.shape[0])
+        self.im_w = widgets.Image(format='webp', width=rgb_array.shape[1], height=rgb_array.shape[0])
         
         # 2. Slicer Proxy (Required by AnnotationCanvas)
         # We wrap our state to match the expected .slicer.state and .slicer.mask structure
@@ -52,7 +52,7 @@ class SimpleRGBWidget:
             # Simple colorization or overlay logic here...
             
         byte_io = io.BytesIO()
-        pil_img.save(byte_io, format='PNG')
+        pil_img.save(byte_io, format='WEBP')
         self.im_w.value = byte_io.getvalue()
 
     def display(self):

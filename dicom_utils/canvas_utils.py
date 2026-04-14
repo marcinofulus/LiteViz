@@ -3,6 +3,7 @@ from ipywidgets import Textarea, VBox, Output
 import time 
 import logging
 import numpy as np
+import threading
 from typing import List, Optional, Tuple, Callable
 from dataclasses import dataclass
 
@@ -251,7 +252,7 @@ class AnnotationCanvas:
         display(self.container)
 
 class UICanvas:
-    def __init__(self, base_widget, window_meta: WindowMeta, event_callback: Callable, throttle_rate=50):
+    def __init__(self, base_widget, window_meta: WindowMeta, event_callback: Callable, throttle_rate=20):
         self.w = base_widget
         self.meta = window_meta
         self.send = event_callback
@@ -264,6 +265,10 @@ class UICanvas:
         self.throttle_interval = 1.0 / throttle_rate if throttle_rate > 0 else 0
         self.last_sent_timestamp = 0
         self.throttled_actions = {'drag_move', 'mouse_move'}
+        
+        # Trailing event logic
+        self.trailing_timer = None
+        self.last_event_data = None
         
         # State
         self.is_mouse_down = False
@@ -397,10 +402,11 @@ class UICanvas:
 
     def send_event(self, action, payload, plane_id, raw_event):
         now = time.time()
-        if self.throttle_interval > 0 and action in self.throttled_actions:
-            if now - self.last_sent_timestamp < self.throttle_interval:
-                return
-            self.last_sent_timestamp = now
+        
+        # Cancel any pending trailing timer
+        if self.trailing_timer:
+            self.trailing_timer.cancel()
+            self.trailing_timer = None
 
         modifier_mask = 0
         if raw_event.get('shiftKey'): modifier_mask |= 1
@@ -422,11 +428,28 @@ class UICanvas:
             'deltaY': payload.get('deltaY'),
             'pressedKeys': payload.get('pressedKeys')
         }
-        
+
+        if self.throttle_interval > 0 and action in self.throttled_actions:
+            self.last_event_data = message
+            if now - self.last_sent_timestamp >= self.throttle_interval:
+                self._send_message(message)
+                self.last_sent_timestamp = now
+            
+            # Always schedule a trailing event for throttled actions
+            self.trailing_timer = threading.Timer(0.1, self._send_trailing_event)
+            self.trailing_timer.start()
+        else:
+            self._send_message(message)
+
+    def _send_trailing_event(self):
+        if self.last_event_data:
+            self._send_message(self.last_event_data)
+            self.last_event_data = None
+
+    def _send_message(self, message):
         # Log for debugging in UI
         log_line = f"[{message['eventType']}] @ {message['planeId']} | x: {message['x']}, y: {message['y']} | mod: {message['modifierMask']}"
         self.msg.value = log_line + "\n" + self.msg.value[:1000]
-        
         self.send(message)
 
     def display(self):
