@@ -291,12 +291,23 @@ class UICanvas:
                              'KeyU','KeyI','KeyO','KeyJ','KeyK','KeyL', 'KeyH', 'KeyG', 'KeyP', 'KeyB']
         
         # ipyevents
-        self.events = Event(
+        # Throttled listener for high-frequency movements (20fps)
+        self.events_fast = Event(
             source=self.w.im_w, 
-            watched_events=['mousedown', 'mouseup', 'mousemove', 'mouseleave', 'wheel', 'contextmenu', 'keydown', 'keyup'],
+            watched_events=['mousemove'],
+            wait=int(1000/throttle_rate),
             prevent_default_action=True
         )
-        self.events.on_dom_event(self._handle_event)
+        
+        # Unthrottled listener for critical interactions
+        self.events_critical = Event(
+            source=self.w.im_w, 
+            watched_events=['mousedown', 'mouseup', 'mouseleave', 'wheel', 'contextmenu', 'keydown', 'keyup', 'click'],
+            prevent_default_action=True
+        )
+        
+        self.events_fast.on_dom_event(self._handle_event)
+        self.events_critical.on_dom_event(self._handle_event)
         
         # UI Container
         self.msg = Textarea(value='Ready', layout={'width': '100%', 'height': '100px'})
