@@ -270,6 +270,11 @@ class UICanvas:
         self.trailing_timer = None
         self.last_event_data = None
         
+        # FPS Tracking
+        self.msg_count = 0
+        self.last_fps_time = time.time()
+        self.current_fps = 0.0
+        
         # State
         self.is_mouse_down = False
         self.is_dragging = False
@@ -310,7 +315,7 @@ class UICanvas:
         self.events_critical.on_dom_event(self._handle_event)
         
         # UI Container
-        self.msg = Textarea(value='Ready', layout={'width': '100%', 'height': '100px'})
+        self.msg = Textarea(value='Ready', layout={'width': '100%', 'height': '32px'})
         self.container = VBox([self.w.widget, self.msg])
 
     def _handle_event(self, event):
@@ -458,9 +463,18 @@ class UICanvas:
             self.last_event_data = None
 
     def _send_message(self, message):
-        # Log for debugging in UI
-        log_line = f"[{message['eventType']}] @ {message['planeId']} | x: {message['x']}, y: {message['y']} | mod: {message['modifierMask']}"
-        self.msg.value = log_line + "\n" + self.msg.value[:1000]
+        # Update FPS
+        self.msg_count += 1
+        now = time.time()
+        elapsed = now - self.last_fps_time
+        if elapsed >= 1.0:
+            self.current_fps = self.msg_count / elapsed
+            self.msg_count = 0
+            self.last_fps_time = now
+
+        # Log for debugging in UI (Single line update)
+        log_line = f"[{message['eventType']}] @ {message['planeId']} | x: {message['x']}, y: {message['y']} | mod: {message['modifierMask']} | FPS: {self.current_fps:.1f}"
+        self.msg.value = log_line
         self.send(message)
 
     def display(self):
