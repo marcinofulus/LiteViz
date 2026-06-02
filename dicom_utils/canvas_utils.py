@@ -323,13 +323,23 @@ class UICanvas:
         now = time.time()
         
         # Coordinate Mapping
-        x_global = int(event.get('dataX', 0))
-        y_global = int(event.get('dataY', 0))
-        
         # If event doesn't have coordinates (some key events), use last known
         if 'dataX' not in event and 'dataY' not in event:
             sub_win, x, y = self.meta.find_subwindow(self.last_x_global, self.last_y_global)
         else:
+            # Handle potential null/None values safely
+            raw_x = event.get('dataX')
+            raw_y = event.get('dataY')
+            try:
+                x_global = int(raw_x) if raw_x is not None else 0
+                y_global = int(raw_y) if raw_y is not None else 0
+            except (ValueError, TypeError):
+                x_global, y_global = 0, 0
+
+            # Discard corrupted events (0, 0) during mouse movements to prevent teleports
+            if x_global == 0 and y_global == 0 and etype in ['mousemove', 'mousedown', 'mouseup', 'wheel', 'click', 'dblclick']:
+                return
+
             sub_win, x, y = self.meta.find_subwindow(x_global, y_global)
             self.last_x_global = x_global
             self.last_y_global = y_global
@@ -356,6 +366,14 @@ class UICanvas:
             self.send_event('mouse_down', {'x': x, 'y': y}, self.current_subwindow_name, event)
 
         elif etype == 'mousemove':
+            buttons = event.get('buttons', 0)
+            if self.is_mouse_down and buttons == 0:
+                if self.is_dragging:
+                    self.send_event('drag_end', {'x': x, 'y': y, 'mouseButton': self.drag_button}, self.current_subwindow_name, event)
+                self.is_mouse_down = False
+                self.is_dragging = False
+                self.drag_button = None
+
             if self.is_mouse_down and not self.is_dragging:
                 dx = x - self.start_x
                 dy = y - self.start_y
@@ -394,11 +412,7 @@ class UICanvas:
         elif etype == 'mouseleave':
             if self.current_subwindow_name:
                 self.send_event('subwindow_leave', {}, self.current_subwindow_name, event)
-                if self.is_dragging:
-                    self.send_event('drag_end', {'x': self.start_x, 'y': self.start_y, 'mouseButton': self.drag_button}, self.current_subwindow_name, event)
                 self.current_subwindow_name = None
-                self.is_mouse_down = False
-                self.is_dragging = False
 
         elif etype == 'wheel':
             scroll_delta = np.sign(event.get('deltaY', 0))
