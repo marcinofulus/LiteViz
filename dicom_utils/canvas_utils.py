@@ -463,6 +463,17 @@ class UICanvas:
             self.last_event_data = None
 
     def _send_message(self, message):
+        # Update dx and dy for drag_move just before sending to avoid drift from throttling
+        if message.get('eventType') == 'drag_start':
+            self.last_sent_drag_x = message.get('x', 0)
+            self.last_sent_drag_y = message.get('y', 0)
+        elif message.get('eventType') == 'drag_move':
+            if hasattr(self, 'last_sent_drag_x'):
+                message['dx'] = message.get('x', 0) - self.last_sent_drag_x
+                message['dy'] = message.get('y', 0) - self.last_sent_drag_y
+                self.last_sent_drag_x = message.get('x', 0)
+                self.last_sent_drag_y = message.get('y', 0)
+
         # Update FPS
         self.msg_count += 1
         now = time.time()
