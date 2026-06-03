@@ -3,7 +3,6 @@ from ipywidgets import Textarea, VBox, Output
 import time 
 import logging
 import numpy as np
-import threading
 from typing import List, Optional, Tuple, Callable
 from dataclasses import dataclass
 
@@ -266,10 +265,6 @@ class UICanvas:
         self.last_sent_timestamp = 0
         self.throttled_actions = {'drag_move', 'mouse_move'}
         
-        # Trailing event logic
-        self.trailing_timer = None
-        self.last_event_data = None
-        
         # FPS Tracking
         self.msg_count = 0
         self.last_fps_time = time.time()
@@ -426,11 +421,6 @@ class UICanvas:
     def send_event(self, action, payload, plane_id, raw_event):
         now = time.time()
         
-        # Cancel any pending trailing timer
-        if self.trailing_timer:
-            self.trailing_timer.cancel()
-            self.trailing_timer = None
-
         modifier_mask = 0
         if raw_event.get('shiftKey'): modifier_mask |= 1
         if raw_event.get('ctrlKey'): modifier_mask |= 2
@@ -453,21 +443,11 @@ class UICanvas:
         }
 
         if self.throttle_interval > 0 and action in self.throttled_actions:
-            self.last_event_data = message
             if now - self.last_sent_timestamp >= self.throttle_interval:
                 self._send_message(message)
                 self.last_sent_timestamp = now
-            
-            # Always schedule a trailing event for throttled actions
-            self.trailing_timer = threading.Timer(0.1, self._send_trailing_event)
-            self.trailing_timer.start()
         else:
             self._send_message(message)
-
-    def _send_trailing_event(self):
-        if self.last_event_data:
-            self._send_message(self.last_event_data)
-            self.last_event_data = None
 
     def _send_message(self, message):
         # Update dx and dy for drag_move just before sending to avoid drift from throttling
