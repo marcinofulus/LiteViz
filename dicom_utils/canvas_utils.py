@@ -252,7 +252,7 @@ class AnnotationCanvas:
         display(self.container)
 
 class UICanvas:
-    def __init__(self, base_widget, window_meta: WindowMeta, event_callback: Callable, throttle_rate=20):
+    def __init__(self, base_widget, window_meta: WindowMeta, event_callback: Callable, throttle_rate=None):
         self.w = base_widget
         self.meta = window_meta
         self.send = event_callback
@@ -262,7 +262,7 @@ class UICanvas:
         self.DBL_CLICK_SPEED = 0.25   # seconds
         self.DRAG_THRESHOLD = 5
         
-        self.throttle_interval = 1.0 / throttle_rate if throttle_rate > 0 else 0
+        self.throttle_interval = 1.0 / throttle_rate if throttle_rate and throttle_rate > 0 else 0
         self.last_sent_timestamp = 0
         self.throttled_actions = {'drag_move', 'mouse_move'}
         
@@ -296,23 +296,16 @@ class UICanvas:
                              'KeyU','KeyI','KeyO','KeyJ','KeyK','KeyL', 'KeyH', 'KeyG', 'KeyP', 'KeyB']
         
         # ipyevents
-        # Throttled listener for high-frequency movements (20fps)
-        self.events_fast = Event(
+        wait_time = int(1000 / throttle_rate) if throttle_rate else 0
+        
+        self.events = Event(
             source=self.w.im_w, 
-            watched_events=['mousemove'],
-            wait=int(1000/throttle_rate),
+            watched_events=['mousemove', 'mousedown', 'mouseup', 'mouseleave', 'wheel', 'contextmenu', 'keydown', 'keyup', 'click'],
+            wait=wait_time,
             prevent_default_action=True
         )
         
-        # Unthrottled listener for critical interactions
-        self.events_critical = Event(
-            source=self.w.im_w, 
-            watched_events=['mousedown', 'mouseup', 'mouseleave', 'wheel', 'contextmenu', 'keydown', 'keyup', 'click'],
-            prevent_default_action=True
-        )
-        
-        self.events_fast.on_dom_event(self._handle_event)
-        self.events_critical.on_dom_event(self._handle_event)
+        self.events.on_dom_event(self._handle_event)
         
         # UI Container
         self.msg = Textarea(value='Ready', layout={'width': '100%', 'height': '32px'})
